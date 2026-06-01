@@ -1,9 +1,10 @@
+# tests/test_machine.py
 from __future__ import annotations
 
 import pytest
 
-from lab4.binary import ProgramImage
-from lab4.isa import DATA_MEMORY_SIZE_WORDS, STACK_POINTER, WORD_BYTES
+from lab4.binary import ProgramImage, encode_program
+from lab4.isa import DATA_MEMORY_SIZE_WORDS, STACK_POINTER, WORD_BYTES, Instruction, OpCode
 from lab4.machine import Machine
 
 
@@ -47,7 +48,7 @@ def test_read_write_word_success() -> None:
     machine.write_word(16, 1234567)
     assert machine.read_word(16) == 1234567
 
-    # Test negative signed values
+    # Тестируем отрицательные знаковые значения
     machine.write_word(32, -100)
     assert machine.read_word(32) == -100
 
@@ -105,3 +106,63 @@ def test_push_too_many_values_overflow() -> None:
 
     with pytest.raises(ValueError, match="out of bounds"):
         machine.push_value(999)
+
+
+def test_step_nop_and_halt() -> None:
+    # Собираем программу: NOP, NOP, HALT
+    code = encode_program(
+        [
+            Instruction(OpCode.NOP),
+            Instruction(OpCode.NOP),
+            Instruction(OpCode.HALT),
+        ]
+    )
+    program = ProgramImage(entry_point=0, code=code)
+    machine = Machine(program)
+
+    # Выполняем первый шаг (NOP)
+    machine.step()
+    assert machine.tick_counter == 1
+    assert machine.pc > 0  # PC сдвинулся на размер NOP
+    assert not machine.halted
+    assert len(machine.log) == 1
+    assert "nop" in machine.log[0]
+
+    # Выполняем второй шаг (NOP)
+    machine.step()
+    assert machine.tick_counter == 2
+
+    # Выполняем третий шаг (HALT)
+    machine.step()
+    assert machine.tick_counter == 3
+    assert machine.halted
+    assert "halt" in machine.log[2]
+
+
+def test_run_executes_until_halt() -> None:
+    code = encode_program(
+        [
+            Instruction(OpCode.NOP),
+            Instruction(OpCode.HALT),
+        ]
+    )
+    program = ProgramImage(entry_point=0, code=code)
+    machine = Machine(program)
+
+    machine.run()
+    assert machine.halted
+    assert machine.tick_counter == 2
+
+
+def test_not_implemented_opcode_raises_error() -> None:
+    # ADD пока не реализован в этом коммите
+    code = encode_program(
+        [
+            Instruction(OpCode.ADD),
+        ]
+    )
+    program = ProgramImage(entry_point=0, code=code)
+    machine = Machine(program)
+
+    with pytest.raises(NotImplementedError, match="is not implemented"):
+        machine.step()
