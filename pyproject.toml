@@ -50,4 +50,4 @@ mypy_path = "src"
 packages = ["lab4"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101"]
+"tests/**/*.py" = ["PLR2004", "S101"]

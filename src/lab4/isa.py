@@ -9,7 +9,7 @@ WORD_BYTES: Final[int] = 4
 U32_MAX: Final[int] = 0xFFFF_FFFF
 DATA_MEMORY_SIZE_WORDS: Final[int] = 4096
 
-# Memory-mapped I/O addresses. They are deliberately placed outside normal RAM.
+# Memory-mapped I/O адресы. They are deliberately placed outside normal RAM.
 IO_INPUT_DATA: Final[int] = 0xFFFF_0000
 IO_INPUT_STATUS: Final[int] = 0xFFFF_0004
 IO_OUTPUT_DATA: Final[int] = 0xFFFF_0008
@@ -18,8 +18,8 @@ IO_OUTPUT_STATUS: Final[int] = 0xFFFF_000C
 INTERRUPT_INPUT_VECTOR: Final[int] = 0
 
 REGISTER_COUNT: Final[int] = 8
-STACK_POINTER: Final[int] = 7  # A7, M68k-like convention.
-FRAME_POINTER: Final[int] = 6  # A6, M68k-like convention.
+STACK_POINTER: Final[int] = 7  # A7, M68k-like конвенция
+FRAME_POINTER: Final[int] = 6  # A6, M68k-like конвенция
 
 
 class OpCode(IntEnum):

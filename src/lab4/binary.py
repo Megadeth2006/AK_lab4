@@ -6,7 +6,7 @@ from typing import Final, assert_never
 
 from lab4.isa import Instruction, OpCode, Operand, OperandKind, to_i32, to_u32
 
-MAGIC: Final[bytes] = b"L4HB"  # Lab 4, Harvard, binary.
+MAGIC: Final[bytes] = b"L4HB"  # Lab 4, Harvard, binary
 VERSION: Final[int] = 1
 _HEADER = struct.Struct("<4sB3xIIII")
 _U8 = struct.Struct("<B")
