@@ -8,12 +8,15 @@ from lab4.machine import Machine
 
 
 def test_machine_initial_state() -> None:
-    program = ProgramImage(entry_point=4, code=b"", data=(), interrupt_vectors=())
+    program = ProgramImage(entry_point=16, code=b"\x00\x00")
     machine = Machine(program)
 
-    assert machine.pc == 4
+    assert machine.code == b"\x00\x00"
+    assert machine.entry_point == 16
+    assert machine.pc == 16
+    assert len(machine.data_memory) == DATA_MEMORY_SIZE_WORDS * WORD_BYTES
     assert machine.d_regs == [0] * 8
-    assert machine.a_regs[:7] == [0] * 7
+    assert machine.a_regs[0:7] == [0] * 7
     assert machine.a_regs[STACK_POINTER] == DATA_MEMORY_SIZE_WORDS * WORD_BYTES
     assert not machine.n
     assert not machine.z
@@ -24,8 +27,12 @@ def test_machine_initial_state() -> None:
     assert machine.log == []
 
 
-def test_machine_static_data_loading() -> None:
-    program = ProgramImage(entry_point=0, code=b"", data=(42, -5, 0x12345678), interrupt_vectors=())
+def test_machine_loads_program_data() -> None:
+    program = ProgramImage(
+        entry_point=0,
+        code=b"",
+        data=(42, -5, 0x12345678),
+    )
     machine = Machine(program)
 
     assert machine.read_word(0) == 42
@@ -33,59 +40,68 @@ def test_machine_static_data_loading() -> None:
     assert machine.read_word(8) == 0x12345678
 
 
-def test_machine_read_write_word() -> None:
-    program = ProgramImage(entry_point=0, code=b"", data=(), interrupt_vectors=())
+def test_read_write_word_success() -> None:
+    program = ProgramImage(entry_point=0, code=b"")
     machine = Machine(program)
 
     machine.write_word(16, 1234567)
     assert machine.read_word(16) == 1234567
 
-    # Test 32-bit signed integer casting.
-    machine.write_word(20, 0xFFFF_FFFF)
-    assert machine.read_word(20) == -1
+    # Test negative signed values
+    machine.write_word(32, -100)
+    assert machine.read_word(32) == -100
 
 
-def test_machine_unaligned_access() -> None:
-    program = ProgramImage(entry_point=0, code=b"", data=(), interrupt_vectors=())
+def test_read_write_word_errors() -> None:
+    program = ProgramImage(entry_point=0, code=b"")
     machine = Machine(program)
 
-    with pytest.raises(ValueError, match="unaligned word access"):
-        machine.read_word(1)
-
-    with pytest.raises(ValueError, match="unaligned word access"):
-        machine.write_word(2, 42)
-
-
-def test_machine_out_of_bounds_access() -> None:
-    program = ProgramImage(entry_point=0, code=b"", data=(), interrupt_vectors=())
-    machine = Machine(program)
-
-    limit = DATA_MEMORY_SIZE_WORDS * WORD_BYTES
-
-    with pytest.raises(ValueError, match="address out of bounds"):
+    with pytest.raises(ValueError, match="out of bounds"):
         machine.read_word(-4)
 
-    with pytest.raises(ValueError, match="address out of bounds"):
-        machine.read_word(limit)
+    with pytest.raises(ValueError, match="out of bounds"):
+        machine.read_word(DATA_MEMORY_SIZE_WORDS * WORD_BYTES)
 
-    with pytest.raises(ValueError, match="address out of bounds"):
-        machine.write_word(limit, 42)
+    with pytest.raises(ValueError, match="must be word-aligned"):
+        machine.read_word(2)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        machine.write_word(-4, 42)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        machine.write_word(DATA_MEMORY_SIZE_WORDS * WORD_BYTES, 42)
+
+    with pytest.raises(ValueError, match="must be word-aligned"):
+        machine.write_word(3, 42)
 
 
-def test_machine_push_pop_value() -> None:
-    program = ProgramImage(entry_point=0, code=b"", data=(), interrupt_vectors=())
+def test_push_pop_value() -> None:
+    program = ProgramImage(entry_point=0, code=b"")
     machine = Machine(program)
 
     initial_sp = machine.a_regs[STACK_POINTER]
 
-    machine.push_value(100)
-    assert machine.a_regs[STACK_POINTER] == initial_sp - WORD_BYTES
+    machine.push_value(10)
+    assert machine.a_regs[STACK_POINTER] == initial_sp - 4
+    assert machine.read_word(initial_sp - 4) == 10
 
-    machine.push_value(-200)
-    assert machine.a_regs[STACK_POINTER] == initial_sp - 2 * WORD_BYTES
+    machine.push_value(-20)
+    assert machine.a_regs[STACK_POINTER] == initial_sp - 8
+    assert machine.read_word(initial_sp - 8) == -20
 
-    assert machine.pop_value() == -200
-    assert machine.a_regs[STACK_POINTER] == initial_sp - WORD_BYTES
+    assert machine.pop_value() == -20
+    assert machine.a_regs[STACK_POINTER] == initial_sp - 4
 
-    assert machine.pop_value() == 100
+    assert machine.pop_value() == 10
     assert machine.a_regs[STACK_POINTER] == initial_sp
+
+
+def test_push_too_many_values_overflow() -> None:
+    program = ProgramImage(entry_point=0, code=b"")
+    machine = Machine(program)
+
+    for i in range(DATA_MEMORY_SIZE_WORDS):
+        machine.push_value(i)
+
+    with pytest.raises(ValueError, match="out of bounds"):
+        machine.push_value(999)
