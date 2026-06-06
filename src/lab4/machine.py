@@ -10,11 +10,17 @@ from lab4.isa import (
     STACK_POINTER,
     WORD_BYTES,
     OpCode,
+    Operand,
+    OperandKind,
     to_i32,
 )
 
 
 class Machine:
+
+    MIN_INT32 = -2147483648
+    UINT32_OVERFLOW_BOUND = 0x100000000
+
     def __init__(self, program: ProgramImage) -> None:
         self.code: bytes = program.code
         self.entry_point: int = program.entry_point
@@ -35,17 +41,17 @@ class Machine:
         self.d_regs: list[int] = [0] * 8
         self.a_regs: list[int] = [0] * 8
 
-        # A7 - указатель стека (Stack Pointer)
-        # Начинается c конца памяти данных и растет вниз (в сторону младших адресов).
+        # A7 — указатель стека (Stack Pointer).
+        # Начинается с конца памяти данных и растет вниз (в сторону младших адресов).
         self.a_regs[STACK_POINTER] = self.data_memory_size
 
         self.pc: int = self.entry_point
 
         # Флаги состояния (регистр признаков)
-        self.n: bool = False
-        self.z: bool = False
-        self.v: bool = False
-        self.c: bool = False
+        self.n: bool = False  # Negative (отрицательный результат)
+        self.z: bool = False  # Zero (нулевой результат)
+        self.v: bool = False  # Overflow (переполнение)
+        self.c: bool = False  # Carry (перенос)
 
         # Состояние управления процессором
         self.halted: bool = False  # Сигнал остановки процессора
@@ -116,8 +122,72 @@ class Machine:
             case OpCode.HALT:
                 self.halted = True
                 self.tick_counter += 1
+            case OpCode.MOVE:
+                src, dest = instr.operands[0], instr.operands[1]
+                val = self._read_operand(src)
+                self._write_operand(dest, val)
+                self._update_nz_flags(val)
+                self.tick_counter += 2
+            case OpCode.LEA:
+                src, dest = instr.operands[0], instr.operands[1]
+                if dest.kind != OperandKind.AREG:
+                    msg = f"LEA destination must be an address register, got: {dest.kind.name}"
+                    raise ValueError(msg)
+                addr = self._resolve_address(src)
+                self._write_operand(dest, addr)
+                self.tick_counter += 2
+            case OpCode.PUSH:
+                src = instr.operands[0]
+                val = self._read_operand(src)
+                self.push_value(val)
+                self.tick_counter += 2
+            case OpCode.POP:
+                dest = instr.operands[0]
+                val = self.pop_value()
+                self._write_operand(dest, val)
+                self.tick_counter += 2
+
+            # Арифметические и логические инструкции (ALU) со вторым операндом
+            case (
+                OpCode.ADD
+                | OpCode.SUB
+                | OpCode.MUL
+                | OpCode.DIV
+                | OpCode.MOD
+                | OpCode.CMP
+                | OpCode.AND
+                | OpCode.OR
+                | OpCode.XOR
+                | OpCode.SHL
+                | OpCode.SHR
+            ):
+                src, dest = instr.operands[0], instr.operands[1]
+                src_val = self._read_operand(src)
+                dest_val = self._read_operand(dest)
+                self._execute_alu_op(instr.opcode, src_val, dest_val, dest)
+                self.tick_counter += 2
+
+            case OpCode.NEG:
+                dest = instr.operands[0]
+                val = self._read_operand(dest)
+                result = to_i32(0 - val)
+                self.n = result < 0
+                self.z = result == 0
+                self.v = val == self.MIN_INT32
+                self.c = val != 0
+                self._write_operand(dest, result)
+                self.tick_counter += 2
+
+            case OpCode.NOT:
+                dest = instr.operands[0]
+                val = self._read_operand(dest)
+                result = to_i32(~val)
+                self._update_nz_flags(result)
+                self._write_operand(dest, result)
+                self.tick_counter += 2
+
             case _:
-                # Bce остальные инструкции будут реализованы в последующих коммитах
+                # Все остальные инструкции будут реализованы в последующих коммитах
                 msg = f"Instruction {instr.opcode.name} is not implemented in the machine core"
                 raise NotImplementedError(msg)
 
@@ -128,6 +198,134 @@ class Machine:
         """Запуск цикла выполнения до остановки (HALT) или превышения лимита тактов."""
         while not self.halted and self.tick_counter < limit:
             self.step()
+
+    def _read_operand(self, op: Operand) -> int:
+        """Чтение значения операнда в зависимости от его режима адресации."""
+        match op.kind:
+            case OperandKind.IMM:
+                return op.value
+            case OperandKind.DREG:
+                return self.d_regs[op.value]
+            case OperandKind.AREG:
+                return self.a_regs[op.value]
+            case OperandKind.ABS:
+                return self.read_word(op.value)
+            case OperandKind.IND_A:
+                return self.read_word(self.a_regs[op.value])
+            case OperandKind.IND_A_DISP:
+                return self.read_word(self.a_regs[op.value] + op.offset)
+        msg = f"Unsupported operand kind for reading: {op.kind.name}"
+        raise ValueError(msg)
+
+    def _write_operand(self, op: Operand, value: int) -> None:
+        """Запись значения в операнд-назначение."""
+        match op.kind:
+            case OperandKind.IMM:
+                msg = "Cannot write to immediate operand"
+                raise ValueError(msg)
+            case OperandKind.DREG:
+                self.d_regs[op.value] = to_i32(value)
+            case OperandKind.AREG:
+                self.a_regs[op.value] = to_i32(value)
+            case OperandKind.ABS:
+                self.write_word(op.value, value)
+            case OperandKind.IND_A:
+                self.write_word(self.a_regs[op.value], value)
+            case OperandKind.IND_A_DISP:
+                self.write_word(self.a_regs[op.value] + op.offset, value)
+            case _:
+                msg = f"Unsupported operand kind for writing: {op.kind.name}"
+                raise ValueError(msg)
+
+    def _resolve_address(self, op: Operand) -> int:
+        """Вычисление эффективного адреса операнда (для LEA и адресации)."""
+        match op.kind:
+            case OperandKind.ABS:
+                return op.value
+            case OperandKind.IND_A:
+                return self.a_regs[op.value]
+            case OperandKind.IND_A_DISP:
+                return self.a_regs[op.value] + op.offset
+            case _:
+                msg = f"Cannot resolve effective address for operand kind: {op.kind.name}"
+                raise ValueError(msg)
+
+    def _execute_alu_op(self, opcode: OpCode, src: int, dest_val: int, dest_op: Operand) -> None:
+        """Выполнение двухместной арифметической или логической операции."""
+        result = 0
+        match opcode:
+            case OpCode.ADD:
+                result = to_i32(dest_val + src)
+                self.n = result < 0
+                self.z = result == 0
+                self.v = ((dest_val < 0) == (src < 0)) and ((result < 0) != (dest_val < 0))
+                self.c = ((dest_val & 0xFFFFFFFF) +
+                        (src & 0xFFFFFFFF)) >= self.UINT32_OVERFLOW_BOUND
+                self._write_operand(dest_op, result)
+
+            case OpCode.SUB | OpCode.CMP:
+                result = to_i32(dest_val - src)
+                self.n = result < 0
+                self.z = result == 0
+                self.v = ((dest_val < 0) != (src < 0)) and ((result < 0) != (dest_val < 0))
+                self.c = (dest_val & 0xFFFFFFFF) < (src & 0xFFFFFFFF)
+                if opcode == OpCode.SUB:
+                    self._write_operand(dest_op, result)
+
+            case OpCode.MUL:
+                result = to_i32(dest_val * src)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.DIV:
+                if src == 0:
+                    msg = "Division by zero"
+                    raise ZeroDivisionError(msg)
+                result = to_i32(int(dest_val / src))
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.MOD:
+                if src == 0:
+                    msg = "Division by zero"
+                    raise ZeroDivisionError(msg)
+                result = to_i32(dest_val - src * int(dest_val / src))
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.AND:
+                result = to_i32(dest_val & src)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.OR:
+                result = to_i32(dest_val | src)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.XOR:
+                result = to_i32(dest_val ^ src)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.SHL:
+                shift = src & 31
+                result = to_i32(dest_val << shift)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+            case OpCode.SHR:
+                shift = src & 31
+                result = to_i32((dest_val & 0xFFFFFFFF) >> shift)
+                self._update_nz_flags(result)
+                self._write_operand(dest_op, result)
+
+    def _update_nz_flags(self, value: int) -> None:
+        """Обновление флагов N и Z по результату операции. Флаги V и C сбрасываются."""
+        self.n = value < 0
+        self.z = value == 0
+        self.v = False
+        self.c = False
 
     def _log_state(self, pc: int, mnemonic: str) -> None:
         """Запись текущего состояния процессора в журнал трассировки."""

@@ -4,7 +4,14 @@ from __future__ import annotations
 import pytest
 
 from lab4.binary import ProgramImage, encode_program
-from lab4.isa import DATA_MEMORY_SIZE_WORDS, STACK_POINTER, WORD_BYTES, Instruction, OpCode
+from lab4.isa import (
+    DATA_MEMORY_SIZE_WORDS,
+    STACK_POINTER,
+    WORD_BYTES,
+    Instruction,
+    OpCode,
+    Operand,
+)
 from lab4.machine import Machine
 
 
@@ -110,13 +117,11 @@ def test_push_too_many_values_overflow() -> None:
 
 def test_step_nop_and_halt() -> None:
     # Собираем программу: NOP, NOP, HALT
-    code = encode_program(
-        [
-            Instruction(OpCode.NOP),
-            Instruction(OpCode.NOP),
-            Instruction(OpCode.HALT),
-        ]
-    )
+    code = encode_program([
+        Instruction(OpCode.NOP),
+        Instruction(OpCode.NOP),
+        Instruction(OpCode.HALT),
+    ])
     program = ProgramImage(entry_point=0, code=code)
     machine = Machine(program)
 
@@ -140,12 +145,10 @@ def test_step_nop_and_halt() -> None:
 
 
 def test_run_executes_until_halt() -> None:
-    code = encode_program(
-        [
-            Instruction(OpCode.NOP),
-            Instruction(OpCode.HALT),
-        ]
-    )
+    code = encode_program([
+        Instruction(OpCode.NOP),
+        Instruction(OpCode.HALT),
+    ])
     program = ProgramImage(entry_point=0, code=code)
     machine = Machine(program)
 
@@ -155,14 +158,207 @@ def test_run_executes_until_halt() -> None:
 
 
 def test_not_implemented_opcode_raises_error() -> None:
-    # ADD пока не реализован в этом коммите
-    code = encode_program(
-        [
-            Instruction(OpCode.ADD),
-        ]
-    )
+    # EI пока не реализован в этом коммите
+    code = encode_program([
+        Instruction(OpCode.EI),
+    ])
     program = ProgramImage(entry_point=0, code=code)
     machine = Machine(program)
 
     with pytest.raises(NotImplementedError, match="is not implemented"):
         machine.step()
+
+
+def test_execute_move_instructions() -> None:
+    # MOVE #40, D0       (40 делится на 4, выровненный базовый адрес)
+    # MOVE D0, A0
+    # MOVE #100, [A0+4]  (Запись по адресу 44, выровнен по границе слова)
+    # MOVE [A0+4], D1
+    # HALT
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(40), Operand.dreg(0))),
+        Instruction(OpCode.MOVE, (Operand.dreg(0), Operand.areg(0))),
+        Instruction(OpCode.MOVE, (Operand.imm(100), Operand.ind_areg_disp(0, 4))),
+        Instruction(OpCode.MOVE, (Operand.ind_areg_disp(0, 4), Operand.dreg(1))),
+        Instruction(OpCode.HALT),
+    ])
+    program = ProgramImage(entry_point=0, code=code)
+    machine = Machine(program)
+    machine.run()
+
+    assert machine.d_regs[0] == 40
+    assert machine.a_regs[0] == 40
+    assert machine.read_word(44) == 100  # A0(40) + 4 = 44
+    assert machine.d_regs[1] == 100
+    assert machine.halted
+    # Проверяем, что флаги обновились (100 > 0, значит N=False, Z=False)
+    assert not machine.n
+    assert not machine.z
+
+
+def test_move_updates_flags() -> None:
+    # Тест установки флага Z (MOVE #0, D0)
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(0), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+    assert machine.z
+    assert not machine.n
+
+    # Тест установки флага N (MOVE #-1, D0)
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(-1), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+    assert machine.n
+    assert not machine.z
+
+
+def test_execute_lea_instruction() -> None:
+    # LEA [0x20], A0 (A0 <- 32)
+    # MOVEA #10, A1
+    # LEA [A1+8], A2 (A2 <- 18)
+    # HALT
+    code = encode_program([
+        Instruction(OpCode.LEA, (Operand.abs(32), Operand.areg(0))),
+        Instruction(OpCode.MOVE, (Operand.imm(10), Operand.areg(1))),
+        Instruction(OpCode.LEA, (Operand.ind_areg_disp(1, 8), Operand.areg(2))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+
+    assert machine.a_regs[0] == 32
+    assert machine.a_regs[1] == 10
+    assert machine.a_regs[2] == 18
+
+
+def test_execute_push_pop_instructions() -> None:
+    # MOVE #50, D0
+    # PUSH D0
+    # MOVE #0, D0
+    # POP D1
+    # HALT
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(50), Operand.dreg(0))),
+        Instruction(OpCode.PUSH, (Operand.dreg(0),)),
+        Instruction(OpCode.MOVE, (Operand.imm(0), Operand.dreg(0))),
+        Instruction(OpCode.POP, (Operand.dreg(1),)),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+
+    assert machine.d_regs[0] == 0
+    assert machine.d_regs[1] == 50
+
+
+def test_execute_arithmetic_instructions() -> None:
+    # MOVE #20, D0
+    # ADD #10, D0     (D0 = 30)
+    # SUB #5, D0      (D0 = 25)
+    # MUL #3, D0      (D0 = 75)
+    # DIV #2, D0      (D0 = 37)
+    # MOD #10, D0     (D0 = 7)
+    # NEG D0          (D0 = -7)
+    # HALT
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(20), Operand.dreg(0))),
+        Instruction(OpCode.ADD, (Operand.imm(10), Operand.dreg(0))),
+        Instruction(OpCode.SUB, (Operand.imm(5), Operand.dreg(0))),
+        Instruction(OpCode.MUL, (Operand.imm(3), Operand.dreg(0))),
+        Instruction(OpCode.DIV, (Operand.imm(2), Operand.dreg(0))),
+        Instruction(OpCode.MOD, (Operand.imm(10), Operand.dreg(0))),
+        Instruction(OpCode.NEG, (Operand.dreg(0),)),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+
+    assert machine.d_regs[0] == -7
+    assert machine.n
+    assert not machine.z
+
+
+def test_division_by_zero_raises_error() -> None:
+    # MOVE #10, D0
+    # DIV #0, D0
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(10), Operand.dreg(0))),
+        Instruction(OpCode.DIV, (Operand.imm(0), Operand.dreg(0))),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    with pytest.raises(ZeroDivisionError, match="Division by zero"):
+        machine.run()
+
+
+def test_add_sub_overflow_flags() -> None:
+    # ADD 0x7FFFFFFF, 0x1 -> sets V, C=0, N=1, Z=0 (Overflow)
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(0x7FFFFFFF), Operand.dreg(0))),
+        Instruction(OpCode.ADD, (Operand.imm(1), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+    assert machine.v
+    assert not machine.c
+    assert machine.n
+
+    # SUB 1, 0 -> sets C=1 (Borrow), V=0, N=1
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(0), Operand.dreg(0))),
+        Instruction(OpCode.SUB, (Operand.imm(1), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+    assert machine.c
+    assert not machine.v
+    assert machine.n
+
+
+def test_cmp_instruction() -> None:
+    # MOVE #42, D0
+    # CMP #42, D0  -> sets Z=1, but D0 remains 42
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(42), Operand.dreg(0))),
+        Instruction(OpCode.CMP, (Operand.imm(42), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+    assert machine.z
+    assert machine.d_regs[0] == 42
+
+
+def test_execute_logical_instructions() -> None:
+    # MOVE #0xF0, D0
+    # AND #0x3C, D0  -> D0 = 0x30
+    # OR #0x0F, D0   -> D0 = 0x3F
+    # XOR #0x30, D0  -> D0 = 0x0F
+    # NOT D0         -> D0 = ~0x0F
+    # SHL #2, D0
+    # SHR #2, D0
+    # HALT
+    code = encode_program([
+        Instruction(OpCode.MOVE, (Operand.imm(0xF0), Operand.dreg(0))),
+        Instruction(OpCode.AND, (Operand.imm(0x3C), Operand.dreg(0))),
+        Instruction(OpCode.OR, (Operand.imm(0x0F), Operand.dreg(0))),
+        Instruction(OpCode.XOR, (Operand.imm(0x30), Operand.dreg(0))),
+        Instruction(OpCode.NOT, (Operand.dreg(0),)),
+        Instruction(OpCode.SHL, (Operand.imm(2), Operand.dreg(0))),
+        Instruction(OpCode.SHR, (Operand.imm(2), Operand.dreg(0))),
+        Instruction(OpCode.HALT),
+    ])
+    machine = Machine(ProgramImage(entry_point=0, code=code))
+    machine.run()
+
+    # ~0x0F is 0xFFFFFFF0.
+    # << 2 -> 0xFFFFFFC0 (which is signed -64).
+    # >> 2 -> Logical right shift of 0xFFFFFFC0 gives 0x3FFFFFF0 (1073741808)
+    assert machine.d_regs[0] == 0x3FFFFFF0
