@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import pytest
 
-from lab4.binary import ProgramImage, encode_program
+from lab4.binary import ProgramImage, decode_program, encode_program
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
     STACK_POINTER,
-    WORD_BYTES,
     Instruction,
     OpCode,
     Operand,
+    WORD_BYTES,
 )
 from lab4.machine import Machine
 
@@ -362,3 +362,42 @@ def test_execute_logical_instructions() -> None:
     # << 2 -> 0xFFFFFFC0 (which is signed -64).
     # >> 2 -> Logical right shift of 0xFFFFFFC0 gives 0x3FFFFFF0 (1073741808)
     assert machine.d_regs[0] == 0x3FFFFFF0
+
+
+def test_execute_branches_jmp_and_conditional() -> None:
+    # Строим тест динамически, чтобы избежать магических смещений байт
+    instrs_template = [
+        Instruction(OpCode.MOVE, (Operand.imm(10), Operand.dreg(0))),  # 0
+        Instruction(OpCode.CMP, (Operand.imm(10), Operand.dreg(0))),   # 1
+        Instruction(OpCode.JE, (Operand.abs(0),)),                     # 2 (будет запатчен)
+        Instruction(OpCode.MOVE, (Operand.imm(1), Operand.dreg(1))),   # 3 (пропускается)
+        Instruction(OpCode.HALT),                                      # 4 (пропускается)
+        Instruction(OpCode.MOVE, (Operand.imm(2), Operand.dreg(1))),   # 5 (цель JE)
+        Instruction(OpCode.CMP, (Operand.imm(5), Operand.dreg(0))),    # 6
+        Instruction(OpCode.JL, (Operand.abs(0),)),                     # 7 (будет запатчен, не должен сработать)
+        Instruction(OpCode.JMP, (Operand.abs(0),)),                    # 8 (будет запатчен, безусловный прыжок на конец)
+        Instruction(OpCode.MOVE, (Operand.imm(99), Operand.dreg(1))),  # 9 (пропускается)
+        Instruction(OpCode.HALT),                                      # 10 (цель безусловного прыжка)
+    ]
+
+    # Шаг 1: кодируем в байты, чтобы узнать точные адреса смещений
+    raw_temp = encode_program(instrs_template)
+    decoded_info = decode_program(raw_temp)
+
+    target_je = decoded_info[5][0]
+    target_jl = decoded_info[9][0]
+    target_jmp = decoded_info[10][0]
+
+    # Шаг 2: пересобираем инструкции с корректными целевыми адресами
+    instrs_template[2] = Instruction(OpCode.JE, (Operand.abs(target_je),))
+    instrs_template[7] = Instruction(OpCode.JL, (Operand.abs(target_jl),))
+    instrs_template[8] = Instruction(OpCode.JMP, (Operand.abs(target_jmp),))
+
+    final_code = encode_program(instrs_template)
+    machine = Machine(ProgramImage(entry_point=0, code=final_code))
+    machine.run()
+
+    # Проверяем правильность выполнения переходов:
+    # D1 должен быть равен 2, а не 1 или 99
+    assert machine.d_regs[1] == 2
+    assert machine.halted

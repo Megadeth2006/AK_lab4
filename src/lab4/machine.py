@@ -21,6 +21,7 @@ class Machine:
     MIN_INT32 = -2147483648
     UINT32_OVERFLOW_BOUND = 0x100000000
 
+
     def __init__(self, program: ProgramImage) -> None:
         self.code: bytes = program.code
         self.entry_point: int = program.entry_point
@@ -186,6 +187,35 @@ class Machine:
                 self._write_operand(dest, result)
                 self.tick_counter += 2
 
+            # Инструкции переходов (Control Flow)
+            case (OpCode.JMP |
+                OpCode.JE | OpCode.JNE | OpCode.JL |
+                OpCode.JLE | OpCode.JG | OpCode.JGE):
+                op = instr.operands[0]
+                target = self._get_jump_target(op)
+
+                taken = False
+                match instr.opcode:
+                    case OpCode.JMP:
+                        taken = True
+                    case OpCode.JE:
+                        taken = self.z
+                    case OpCode.JNE:
+                        taken = not self.z
+                    case OpCode.JL:
+                        taken = self.n != self.v
+                    case OpCode.JLE:
+                        taken = self.z or (self.n != self.v)
+                    case OpCode.JG:
+                        taken = (not self.z) and (self.n == self.v)
+                    case OpCode.JGE:
+                        taken = self.n == self.v
+
+                if taken:
+                    self.pc = target
+
+                self.tick_counter += 2
+
             case _:
                 # Все остальные инструкции будут реализованы в последующих коммитах
                 msg = f"Instruction {instr.opcode.name} is not implemented in the machine core"
@@ -250,6 +280,18 @@ class Machine:
                 msg = f"Cannot resolve effective address for operand kind: {op.kind.name}"
                 raise ValueError(msg)
 
+    def _get_jump_target(self, op: Operand) -> int:
+        """Вычисление целевого адреса перехода PC."""
+        match op.kind:
+            case OperandKind.ABS | OperandKind.IMM:
+                return op.value
+            case OperandKind.AREG:
+                return self.a_regs[op.value]
+            case OperandKind.IND_A:
+                return self.a_regs[op.value]
+            case _:
+                return self._read_operand(op)
+
     def _execute_alu_op(self, opcode: OpCode, src: int, dest_val: int, dest_op: Operand) -> None:
         """Выполнение двухместной арифметической или логической операции."""
         result = 0
@@ -260,7 +302,7 @@ class Machine:
                 self.z = result == 0
                 self.v = ((dest_val < 0) == (src < 0)) and ((result < 0) != (dest_val < 0))
                 self.c = ((dest_val & 0xFFFFFFFF) +
-                        (src & 0xFFFFFFFF)) >= self.UINT32_OVERFLOW_BOUND
+                          (src & 0xFFFFFFFF)) >= self.UINT32_OVERFLOW_BOUND
                 self._write_operand(dest_op, result)
 
             case OpCode.SUB | OpCode.CMP:
@@ -329,14 +371,12 @@ class Machine:
 
     def _log_state(self, pc: int, mnemonic: str) -> None:
         """Запись текущего состояния процессора в журнал трассировки."""
-        flags_str = "".join(
-            [
-                "N" if self.n else "-",
-                "Z" if self.z else "-",
-                "V" if self.v else "-",
-                "C" if self.c else "-",
-            ]
-        )
+        flags_str = "".join([
+            "N" if self.n else "-",
+            "Z" if self.z else "-",
+            "V" if self.v else "-",
+            "C" if self.c else "-",
+        ])
         d_regs_str = ", ".join(f"{val}" for val in self.d_regs)
         a_regs_str = ", ".join(f"{val}" for val in self.a_regs)
         log_entry = (
