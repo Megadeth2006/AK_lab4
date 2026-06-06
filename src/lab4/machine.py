@@ -17,10 +17,8 @@ from lab4.isa import (
 
 
 class Machine:
-
     MIN_INT32 = -2147483648
     UINT32_OVERFLOW_BOUND = 0x100000000
-
 
     def __init__(self, program: ProgramImage) -> None:
         self.code: bytes = program.code
@@ -188,9 +186,8 @@ class Machine:
                 self.tick_counter += 2
 
             # Инструкции переходов (Control Flow)
-            case (OpCode.JMP |
-                OpCode.JE | OpCode.JNE | OpCode.JL |
-                OpCode.JLE | OpCode.JG | OpCode.JGE):
+            case (OpCode.JMP | OpCode.JE | OpCode.JNE |
+                OpCode.JL | OpCode.JLE | OpCode.JG | OpCode.JGE):
                 op = instr.operands[0]
                 target = self._get_jump_target(op)
 
@@ -216,8 +213,24 @@ class Machine:
 
                 self.tick_counter += 2
 
+            # Вызов подпрограммы
+            case OpCode.CALL:
+                op = instr.operands[0]
+                target = self._get_jump_target(op)
+                # Сохраняем адрес возврата (PC следующей инструкции) на стек
+                self.push_value(self.pc)
+                # Переходим к подпрограмме
+                self.pc = target
+                self.tick_counter += 3
+
+            # Возврат из подпрограммы
+            case OpCode.RET:
+                # Извлекаем адрес возврата со стека и переходим к нему
+                self.pc = self.pop_value()
+                self.tick_counter += 3
+
             case _:
-                # Все остальные инструкции будут реализованы в последующих коммитах
+                # Инструкции прерываний будут реализованы на соответствующем этапе
                 msg = f"Instruction {instr.opcode.name} is not implemented in the machine core"
                 raise NotImplementedError(msg)
 
@@ -302,7 +315,7 @@ class Machine:
                 self.z = result == 0
                 self.v = ((dest_val < 0) == (src < 0)) and ((result < 0) != (dest_val < 0))
                 self.c = ((dest_val & 0xFFFFFFFF) +
-                          (src & 0xFFFFFFFF)) >= self.UINT32_OVERFLOW_BOUND
+                        (src & 0xFFFFFFFF)) >= self.UINT32_OVERFLOW_BOUND
                 self._write_operand(dest_op, result)
 
             case OpCode.SUB | OpCode.CMP:

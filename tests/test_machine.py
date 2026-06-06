@@ -7,10 +7,10 @@ from lab4.binary import ProgramImage, decode_program, encode_program
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
     STACK_POINTER,
+    WORD_BYTES,
     Instruction,
     OpCode,
     Operand,
-    WORD_BYTES,
 )
 from lab4.machine import Machine
 
@@ -367,17 +367,28 @@ def test_execute_logical_instructions() -> None:
 def test_execute_branches_jmp_and_conditional() -> None:
     # Строим тест динамически, чтобы избежать магических смещений байт
     instrs_template = [
-        Instruction(OpCode.MOVE, (Operand.imm(10), Operand.dreg(0))),  # 0
-        Instruction(OpCode.CMP, (Operand.imm(10), Operand.dreg(0))),   # 1
-        Instruction(OpCode.JE, (Operand.abs(0),)),                     # 2 (будет запатчен)
-        Instruction(OpCode.MOVE, (Operand.imm(1), Operand.dreg(1))),   # 3 (пропускается)
-        Instruction(OpCode.HALT),                                      # 4 (пропускается)
-        Instruction(OpCode.MOVE, (Operand.imm(2), Operand.dreg(1))),   # 5 (цель JE)
-        Instruction(OpCode.CMP, (Operand.imm(5), Operand.dreg(0))),    # 6
-        Instruction(OpCode.JL, (Operand.abs(0),)),                     # 7 (будет запатчен, не должен сработать)
-        Instruction(OpCode.JMP, (Operand.abs(0),)),                    # 8 (будет запатчен, безусловный прыжок на конец)
-        Instruction(OpCode.MOVE, (Operand.imm(99), Operand.dreg(1))),  # 9 (пропускается)
-        Instruction(OpCode.HALT),                                      # 10 (цель безусловного прыжка)
+        # 0
+        Instruction(OpCode.MOVE, (Operand.imm(10), Operand.dreg(0))),
+        # 1
+        Instruction(OpCode.CMP, (Operand.imm(10), Operand.dreg(0))),
+        # 2 (будет запатчен)
+        Instruction(OpCode.JE, (Operand.abs(0),)),
+        # 3 (пропускается)
+        Instruction(OpCode.MOVE, (Operand.imm(1), Operand.dreg(1))),
+        # 4 (пропускается)
+        Instruction(OpCode.HALT),
+        # 5 (цель JE)
+        Instruction(OpCode.MOVE, (Operand.imm(2), Operand.dreg(1))),
+        # 6
+        Instruction(OpCode.CMP, (Operand.imm(5), Operand.dreg(0))),
+        # 7 (будет запатчен, не должен сработать)
+        Instruction(OpCode.JL, (Operand.abs(0),)),
+        # 8 (будет запатчен, безусловный прыжок на конец)
+        Instruction(OpCode.JMP, (Operand.abs(0),)),
+        # 9 (пропускается)
+        Instruction(OpCode.MOVE, (Operand.imm(99), Operand.dreg(1))),
+        # 10 (цель безусловного прыжка)
+        Instruction(OpCode.HALT),
     ]
 
     # Шаг 1: кодируем в байты, чтобы узнать точные адреса смещений
@@ -400,4 +411,33 @@ def test_execute_branches_jmp_and_conditional() -> None:
     # Проверяем правильность выполнения переходов:
     # D1 должен быть равен 2, а не 1 или 99
     assert machine.d_regs[1] == 2
+    assert machine.halted
+
+
+def test_execute_call_ret_subroutine() -> None:
+    instrs_template = [
+        Instruction(OpCode.MOVE, (Operand.imm(5), Operand.dreg(0))),  # 0
+        Instruction(OpCode.CALL, (Operand.abs(0),)),                  # 1 (будет запатчен)
+        Instruction(OpCode.MUL, (Operand.imm(2), Operand.dreg(0))),   # 2 (возврат сюда!)
+        Instruction(OpCode.HALT),                                     # 3
+        # Подпрограмма:
+        Instruction(OpCode.ADD, (Operand.imm(10), Operand.dreg(0))),  # 4 (цель вызова)
+        Instruction(OpCode.RET),                                      # 5
+    ]
+
+    # Шаг 1: кодируем в байты, чтобы узнать точные адреса смещений
+    raw_temp = encode_program(instrs_template)
+    decoded_info = decode_program(raw_temp)
+
+    target_sub = decoded_info[4][0]
+
+    # Шаг 2: пересобираем с правильным адресом вызова
+    instrs_template[1] = Instruction(OpCode.CALL, (Operand.abs(target_sub),))
+
+    final_code = encode_program(instrs_template)
+    machine = Machine(ProgramImage(entry_point=0, code=final_code))
+    machine.run()
+
+    # Проверяем: D0 должен стать (5 + 10) * 2 = 30
+    assert machine.d_regs[0] == 30
     assert machine.halted
