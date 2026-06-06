@@ -7,6 +7,8 @@ from typing import Final
 from lab4.binary import ProgramImage, decode_instruction
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
+    IO_OUTPUT_DATA,
+    IO_OUTPUT_STATUS,
     STACK_POINTER,
     WORD_BYTES,
     OpCode,
@@ -57,8 +59,16 @@ class Machine:
         self.tick_counter: int = 0  # Счетчик тактов
         self.log: list[str] = []  # Журнал трассировки выполнения
 
+        # Буфер вывода символов (хранит ASCII-коды выведенных символов)
+        self.output_buffer: list[int] = []
+
     def read_word(self, address: int) -> int:
         """Чтение 32-битного знакового слова из памяти данных по байтовому адресу."""
+        # Обработка портов вывода (Memory-mapped I/O)
+        if address == IO_OUTPUT_STATUS:
+            return 1  # Порт вывода всегда готов к приему данных
+        if address == IO_OUTPUT_DATA:
+            return 0  # Порт данных только для записи, при чтении возвращает 0
         if address < 0 or address + WORD_BYTES > self.data_memory_size:
             msg = f"Data memory access out of bounds: {address}"
             raise ValueError(msg)
@@ -70,6 +80,11 @@ class Machine:
 
     def write_word(self, address: int, value: int) -> None:
         """Запись 32-битного знакового слова в память данных по байтовому адресу."""
+        if address == IO_OUTPUT_DATA:
+            self.output_buffer.append(value & 0xFF)  # Сохраняем младший байт как ASCII-символ
+            return
+        if address == IO_OUTPUT_STATUS:
+            return  # Запись в порт статуса вывода игнорируется
         if address < 0 or address + WORD_BYTES > self.data_memory_size:
             msg = f"Data memory access out of bounds: {address}"
             raise ValueError(msg)

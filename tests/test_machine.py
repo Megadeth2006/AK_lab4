@@ -6,6 +6,8 @@ import pytest
 from lab4.binary import ProgramImage, decode_program, encode_program
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
+    IO_OUTPUT_DATA,
+    IO_OUTPUT_STATUS,
     STACK_POINTER,
     WORD_BYTES,
     Instruction,
@@ -469,3 +471,31 @@ def test_execute_call_ret_subroutine() -> None:
     # Проверяем: D0 должен стать (5 + 10) * 2 = 30
     assert machine.d_regs[0] == 30
     assert machine.halted
+
+
+def test_memory_mapped_output() -> None:
+    # MOVE #65, D0 (ASCII 'A')
+    # MOVE D0, [0xFFFF0008] (Запись в IO_OUTPUT_DATA)
+    # MOVE #66, [0xFFFF0008] (Запись ASCII 'B' напрямую)
+    # HALT
+    code = encode_program(
+        [
+            Instruction(OpCode.MOVE, (Operand.imm(65), Operand.dreg(0))),
+            Instruction(OpCode.MOVE, (Operand.dreg(0), Operand.abs(IO_OUTPUT_DATA))),
+            Instruction(OpCode.MOVE, (Operand.imm(66), Operand.abs(IO_OUTPUT_DATA))),
+            Instruction(OpCode.HALT),
+        ]
+    )
+    program = ProgramImage(entry_point=0, code=code)
+    machine = Machine(program)
+
+    # Проверяем, что порт статуса сообщает о готовности (1)
+    assert machine.read_word(IO_OUTPUT_STATUS) == 1
+
+    machine.run()
+
+    # Проверяем буфер вывода
+    assert machine.output_buffer == [65, 66]
+    # 'AB' в символьном представлении
+    output_str = "".join(chr(c) for c in machine.output_buffer)
+    assert output_str == "AB"
