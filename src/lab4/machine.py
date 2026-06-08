@@ -7,6 +7,9 @@ from typing import Final
 from lab4.binary import ProgramImage, decode_instruction
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
+    INTERRUPT_INPUT_VECTOR,
+    IO_INPUT_DATA,
+    IO_INPUT_STATUS,
     IO_OUTPUT_DATA,
     IO_OUTPUT_STATUS,
     STACK_POINTER,
@@ -22,7 +25,9 @@ class Machine:
     MIN_INT32 = -2147483648
     UINT32_OVERFLOW_BOUND = 0x100000000
 
-    def __init__(self, program: ProgramImage) -> None:
+    def __init__(
+        self, program: ProgramImage, input_schedule: list[tuple[int, str]] | None = None
+    ) -> None:
         self.code: bytes = program.code
         self.entry_point: int = program.entry_point
 
@@ -62,8 +67,27 @@ class Machine:
         # Буфер вывода символов (хранит ASCII-коды выведенных символов)
         self.output_buffer: list[int] = []
 
+        # Система прерываний и ввода (Trap)
+        # Сортируем расписание по тактам в обратном порядке для эффективного pop()
+        self.input_schedule: list[tuple[int, str]] = sorted(
+            input_schedule or [], key=lambda x: x[0], reverse=True
+        )
+        self.input_data: int = 0  # Регистр данных ввода
+        self.input_status: int = 0  # Регистр статуса ввода (1 - готовы новые данные)
+        self.interrupt_vectors: tuple[int, ...] = program.interrupt_vectors
+        self.interrupts_enabled: bool = False  # Разрешены ли прерывания (флаг I)
+        self.in_interrupt_handler: bool = False  # Флаг обработки прерывания (маскирует вложенные)
+
     def read_word(self, address: int) -> int:
         """Чтение 32-битного знакового слова из памяти данных по байтовому адресу."""
+        # Обработка портов ввода-вывода (Memory-mapped I/O)
+        if address == IO_INPUT_STATUS:
+            return self.input_status
+        if address == IO_INPUT_DATA:
+            input_val: int = self.input_data
+            self.input_status = 0  # Чтение данных сбрасывает готовность порта
+            return input_val
+
         # Обработка портов вывода (Memory-mapped I/O)
         if address == IO_OUTPUT_STATUS:
             return 1  # Порт вывода всегда готов к приему данных
@@ -75,8 +99,8 @@ class Machine:
         if address % WORD_BYTES != 0:
             msg = f"Data memory address must be word-aligned: {address}"
             raise ValueError(msg)
-        val: int = struct.unpack_from("<i", self.data_memory, address)[0]
-        return to_i32(val)
+        memory_val: int = struct.unpack_from("<i", self.data_memory, address)[0]
+        return to_i32(memory_val)
 
     def write_word(self, address: int, value: int) -> None:
         """Запись 32-битного знакового слова в память данных по байтовому адресу."""
@@ -113,6 +137,8 @@ class Machine:
         if self.halted:
             return
 
+        # Проверяем внешние прерывания ввода на текущем такте
+        self._check_interrupts()
         # Запоминаем текущий PC для логирования
         current_pc = self.pc
 
@@ -251,10 +277,31 @@ class Machine:
                 self.pc = self.pop_value()
                 self.tick_counter += 3
 
-            case _:
-                # Инструкции прерываний будут реализованы на соответствующем этапе
-                msg = f"Instruction {instr.opcode.name} is not implemented in the machine core"
-                raise NotImplementedError(msg)
+            # Разрешение прерываний
+            case OpCode.EI:
+                self.interrupts_enabled = True
+                self.tick_counter += 1
+
+            # Запрещение прерываний
+            case OpCode.DI:
+                self.interrupts_enabled = False
+                self.tick_counter += 1
+
+            # Возврат из прерывания
+            case OpCode.IRET:
+                # 1. Восстанавливаем сохраненные флаги из стека
+                flags_word = self.pop_value()
+                self.n = bool(flags_word & 1)
+                self.z = bool(flags_word & 2)
+                self.v = bool(flags_word & 4)
+                self.c = bool(flags_word & 8)
+
+                # 2. Восстанавливаем PC из стека
+                self.pc = self.pop_value()
+
+                # Сбрасываем флаг нахождения в обработчике
+                self.in_interrupt_handler = False
+                self.tick_counter += 4
 
         # Логирование состояния процессора после выполнения шага
         self._log_state(current_pc, instr.to_mnemonic())
@@ -417,12 +464,46 @@ class Machine:
         )
         d_regs_str = ", ".join(f"{val}" for val in self.d_regs)
         a_regs_str = ", ".join(f"{val}" for val in self.a_regs)
+        mode_str = "INT" if self.in_interrupt_handler else "USR"
         log_entry = (
             f"TICK: {self.tick_counter:4d} | "
             f"PC: 0x{pc:04X} | "
+            f"{mode_str} | "
             f"{mnemonic:<25} | "
             f"D: [{d_regs_str}] | "
             f"A: [{a_regs_str}] | "
             f"Flags: {flags_str}"
         )
         self.log.append(log_entry)
+
+    def _check_interrupts(self) -> None:
+        """Проверка наступления запланированных событий прерывания ввода."""
+        if self.input_schedule and self.tick_counter >= self.input_schedule[-1][0]:
+            _, char = self.input_schedule.pop()
+            self.input_data = ord(char)
+            self.input_status = 1  # Выставляем готовность данных
+
+            # Если прерывания разрешены процессором и мы не обрабатываем другое прерывание
+            if self.interrupts_enabled and not self.in_interrupt_handler:
+                self._trigger_interrupt()
+
+    def _trigger_interrupt(self) -> None:
+        """Переход к обработчику прерывания."""
+        if not self.interrupt_vectors:
+            return  # Нет зарегистрированных векторов - игнорируем прерывание
+
+        self.in_interrupt_handler = True
+
+        # Сохраняем состояние на стек: сначала PC (адрес возврата), затем упакованные флаги
+        self.push_value(self.pc)
+        flags_word = (
+            (1 if self.n else 0)
+            | (2 if self.z else 0)
+            | (4 if self.v else 0)
+            | (8 if self.c else 0)
+        )
+        self.push_value(flags_word)
+
+        # Переходим к обработчику по вектору ввода
+        self.pc = self.interrupt_vectors[INTERRUPT_INPUT_VECTOR]
+        self.tick_counter += 4

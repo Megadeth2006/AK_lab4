@@ -6,6 +6,7 @@ import pytest
 from lab4.binary import ProgramImage, decode_program, encode_program
 from lab4.isa import (
     DATA_MEMORY_SIZE_WORDS,
+    IO_INPUT_DATA,
     IO_OUTPUT_DATA,
     IO_OUTPUT_STATUS,
     STACK_POINTER,
@@ -162,19 +163,6 @@ def test_run_executes_until_halt() -> None:
     assert machine.halted
     assert machine.tick_counter == 2
 
-
-def test_not_implemented_opcode_raises_error() -> None:
-    # EI пока не реализован в этом коммите
-    code = encode_program(
-        [
-            Instruction(OpCode.EI),
-        ]
-    )
-    program = ProgramImage(entry_point=0, code=code)
-    machine = Machine(program)
-
-    with pytest.raises(NotImplementedError, match="is not implemented"):
-        machine.step()
 
 
 def test_execute_move_instructions() -> None:
@@ -499,3 +487,62 @@ def test_memory_mapped_output() -> None:
     # 'AB' в символьном представлении
     output_str = "".join(chr(c) for c in machine.output_buffer)
     assert output_str == "AB"
+
+
+def test_trap_based_input_interrupts() -> None:
+    # Шаблон программы:
+    # Вектор прерываний содержит адрес обработчика handler.
+    # Основная программа:
+    #   0x00: EI                  (Разрешаем прерывания)
+    #   loop:
+    #   0x01: NOP
+    #   0x02: CMP #88, D0         (Ждем, пока D0 станет равен ASCII 'X' = 88)
+    #   0x05: JNE loop
+    #   0x0B: HALT
+    #
+    # Обработчик прерывания (handler):
+    #   0x0D: MOVE [IO_INPUT_DATA], D0    (Читаем символ из порта ввода)
+    #   0x13: MOVE D0, [IO_OUTPUT_DATA]   (Выводим его обратно — эхо)
+    #   0x19: IRET                        (Возврат)
+
+    instrs_template = [
+        # Основная программа
+        Instruction(OpCode.EI),  # 0
+        Instruction(OpCode.NOP),  # 1 (метка loop)
+        Instruction(OpCode.CMP, (Operand.imm(88), Operand.dreg(0))),  # 2
+        Instruction(OpCode.JNE, (Operand.abs(0),)),  # 3 (будет запатчен на адрес loop)
+        Instruction(OpCode.HALT),  # 4
+        # Обработчик прерывания
+        Instruction(
+            OpCode.MOVE, (Operand.abs(IO_INPUT_DATA), Operand.dreg(0))
+        ),  # 5 (цель прерывания)
+        Instruction(OpCode.MOVE, (Operand.dreg(0), Operand.abs(IO_OUTPUT_DATA))),  # 6
+        Instruction(OpCode.IRET),  # 7
+    ]
+
+    # Шаг 1: Кодируем для определения точных смещений
+    raw_temp = encode_program(instrs_template)
+    decoded_info = decode_program(raw_temp)
+
+    loop_pc = decoded_info[1][0]
+    handler_pc = decoded_info[5][0]
+
+    # Шаг 2: Пересобираем программу
+    instrs_template[3] = Instruction(OpCode.JNE, (Operand.abs(loop_pc),))
+    final_code = encode_program(instrs_template)
+
+    # Задаем расписание: на такте 15 придет символ 'X' (ASCII 88)
+    schedule = [(15, "X")]
+    image = ProgramImage(entry_point=0, code=final_code, interrupt_vectors=(handler_pc,))
+    machine = Machine(image, input_schedule=schedule)
+
+    machine.run(limit=100)
+
+    # Проверяем успешность
+    assert machine.d_regs[0] == 88  # Символ 'X' прочитан в D0
+    assert machine.output_buffer == [88]  # Эхо-вывод сработал
+    assert machine.halted  # Машина успешно остановилась, выйдя из цикла ожидания
+
+    # Проверяем наличие логов обработки прерываний
+    int_logs = [line for line in machine.log if "INT" in line]
+    assert len(int_logs) > 0  # Мы заходили в режим INT!
