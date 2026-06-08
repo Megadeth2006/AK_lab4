@@ -164,7 +164,6 @@ def test_run_executes_until_halt() -> None:
     assert machine.tick_counter == 2
 
 
-
 def test_execute_move_instructions() -> None:
     # MOVE #40, D0       (40 делится на 4, выровненный базовый адрес)
     # MOVE D0, A0
