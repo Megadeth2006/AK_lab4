@@ -51,4 +51,4 @@ packages = ["lab4"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["PLR2004", "S101", "ERA001", "RUF003"]
-"src/lab4/*.py" = ["RUF003", "RUF002", "C901", "PLR0912", "PLR0915", "PLR0911"]
+"src/lab4/*.py" = ["RUF003", "RUF002", "C901", "PLR0912", "PLR0915", "PLR0911", "RET503"]
