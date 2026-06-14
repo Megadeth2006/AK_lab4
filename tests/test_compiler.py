@@ -116,3 +116,51 @@ def test_compile_and_run_while_loop() -> None:
 
     assert machine.d_regs[0] == 120
     assert machine.halted
+
+
+def test_compile_and_run_print_string() -> None:
+    # Тестируем печать Pascal-строк из статической памяти
+    source = """
+    fn void main() {
+        string msg = "Hello from alg!";
+        print_string(msg);
+    }
+    """
+    lexer = Lexer(source)
+    parser = Parser(lexer)
+    program = parser.parse()
+
+    compiler = Compiler()
+    image = compiler.compile(program)
+
+    # Проверяем, что в статической памяти есть длина (15) и символы
+    assert image.data[0] == 15
+    assert image.data[1] == ord("H")
+
+    machine = Machine(image)
+    machine.run()
+
+    # Сверяем буфер вывода
+    output_str = "".join(chr(c) for c in machine.output_buffer)
+    assert output_str == "Hello from alg!"
+
+
+def test_compile_and_run_print_int() -> None:
+    # Тестируем вывод знаковых чисел
+    source = """
+    fn void main() {
+        print_int(-12345);
+    }
+    """
+    lexer = Lexer(source)
+    parser = Parser(lexer)
+    program = parser.parse()
+
+    compiler = Compiler()
+    image = compiler.compile(program)
+
+    machine = Machine(image)
+    machine.run()
+
+    output_str = "".join(chr(c) for c in machine.output_buffer)
+    assert output_str == "-12345"

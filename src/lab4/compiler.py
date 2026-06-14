@@ -18,11 +18,12 @@ from lab4.ast import (
     Program,
     Return,
     Statement,
+    StrLiteral,
     UnaryOp,
     VarDecl,
     While,
 )
-from lab4.isa import OpCode, Operand
+from lab4.isa import IO_OUTPUT_DATA, WORD_BYTES, OpCode, Operand
 
 if TYPE_CHECKING:
     from lab4.binary import ProgramImage
@@ -33,12 +34,14 @@ class Compiler:
 
     def __init__(self) -> None:
         self.builder = AssemblyBuilder()
-        # Таблица символов текущей функции: имя_переменной -> смещение_от_A6
         self.local_symbols: dict[str, int] = {}
-        # Смещение для следующей локальной переменной
         self.next_local_offset = -4
-        # Счетчик для генерации уникальных имен меток
         self.label_counter = 0
+
+        # Секция статических данных (для Pascal строк)
+        self.static_data: list[int] = []
+        # Кэш дубликатов строк: литерал -> байтовый адрес
+        self.string_literals: dict[str, int] = {}
 
     def _new_label(self, prefix: str) -> str:
         """Генерация уникальной метки."""
@@ -47,22 +50,34 @@ class Compiler:
 
     def compile(self, program: Program) -> ProgramImage:
         """Компиляция всей программы."""
-        # Ищем функцию main — она должна быть точкой входа
+        self.static_data.clear()
+        self.string_literals.clear()
+
+        # Ищем функцию main
         main_func = next((f for f in program.funcs if f.name == "main"), None)
         if not main_func:
             msg = "Entry point function 'main' is not found"
             raise ValueError(msg)
 
-        # Компилируем вызов main в качестве стартовой точки бинарного образа
+        # Точка входа: вызов main и остановка
         self.builder.add(OpCode.CALL, "main")
         self.builder.add(OpCode.HALT)
 
-        # Компилируем все функции программы
+        # Компилируем все функции
         for func in program.funcs:
             self._compile_function(func)
 
-        # Собираем и возвращаем бинарный образ
-        return self.builder.build(entry_point=0)
+        # Внедряем системную библиотеку
+        self._inject_print_string()
+        self._inject_print_int()
+
+        # Если объявлена функция on_input, регистрируем её в таблице прерываний
+        has_on_input = any(f.name == "on_input" for f in program.funcs)
+        vectors = ("on_input",) if has_on_input else ()
+
+        return self.builder.build(
+            entry_point=0, data=tuple(self.static_data), interrupt_vectors=vectors
+        )
 
     def _compile_function(self, func: Function) -> None:
         """Компиляция одной функции (пролог, тело, эпилог)."""
@@ -198,7 +213,23 @@ class Compiler:
             offset = self.local_symbols[expr.name]
             # move [A6 + offset], D0
             self.builder.add(OpCode.MOVE, Operand.ind_areg_disp(6, offset), Operand.dreg(0))
+        elif isinstance(expr, NumLiteral):
+            self.builder.add(OpCode.MOVE, Operand.imm(expr.value), Operand.dreg(0))
 
+        elif isinstance(expr, StrLiteral):
+            if expr.value not in self.string_literals:
+                # Выделяем адрес начала строки в байтах
+                addr = len(self.static_data) * WORD_BYTES
+                # Записываем длину (Pascal layout)
+                self.static_data.append(len(expr.value))
+                # Записываем символы по словам
+                for char in expr.value:
+                    self.static_data.append(ord(char))
+                self.string_literals[expr.value] = addr
+
+            addr = self.string_literals[expr.value]
+            # Загружаем адрес строки в D0
+            self.builder.add(OpCode.MOVE, Operand.imm(addr), Operand.dreg(0))
         elif isinstance(expr, BinOp):
             # 1. Вычисляем левый операнд -> результат в D0
             self._compile_expr(expr.left)
@@ -307,3 +338,107 @@ class Compiler:
             elif isinstance(stmt, While):
                 count += self._count_local_variables(stmt.body)
         return count
+
+    def _inject_print_string(self) -> None:
+        """Системная процедура вывода Pascal strings."""
+        self.builder.label("print_string")
+        self.builder.add(OpCode.PUSH, Operand.areg(6))
+        self.builder.add(OpCode.MOVE, Operand.areg(7), Operand.areg(6))
+
+        # Загружаем адрес начала строки [A6 + 8] в A0
+        self.builder.add(OpCode.MOVE, Operand.ind_areg_disp(6, 8), Operand.areg(0))
+        # Читаем длину строки из [A0] в D0
+        self.builder.add(OpCode.MOVE, Operand.ind_areg(0), Operand.dreg(0))
+
+        # Если длина == 0, выходим
+        self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+        self.builder.add(OpCode.JE, "print_string_end")
+
+        # Настраиваем A1 на первый символ (адрес + 4)
+        self.builder.add(OpCode.LEA, Operand.ind_areg_disp(0, 4), Operand.areg(1))
+        # Сеттим счетчик цикла D1 = 0
+        self.builder.add(OpCode.MOVE, Operand.imm(0), Operand.dreg(1))
+
+        self.builder.label("print_string_loop")
+        # Цикл окончен, если D1 == D0 (счетчик == длина)
+        self.builder.add(OpCode.CMP, Operand.dreg(0), Operand.dreg(1))
+        self.builder.add(OpCode.JE, "print_string_end")
+
+        # Читаем символ из [A1] в D2
+        self.builder.add(OpCode.MOVE, Operand.ind_areg(1), Operand.dreg(2))
+        # Выводим в порт вывода
+        self.builder.add(OpCode.MOVE, Operand.dreg(2), Operand.abs(IO_OUTPUT_DATA))
+
+        # Инкрементируем адрес символа A1 += 4 и счетчик D1 += 1
+        self.builder.add(OpCode.ADD, Operand.imm(4), Operand.areg(1))
+        self.builder.add(OpCode.ADD, Operand.imm(1), Operand.dreg(1))
+        self.builder.add(OpCode.JMP, "print_string_loop")
+
+        self.builder.label("print_string_end")
+        self.builder.add(OpCode.MOVE, Operand.areg(6), Operand.areg(7))
+        self.builder.add(OpCode.POP, Operand.areg(6))
+        self.builder.add(OpCode.RET)
+
+    def _inject_print_int(self) -> None:
+        """Системная процедура вывода знаковых целых чисел."""
+        self.builder.label("print_int")
+        self.builder.add(OpCode.PUSH, Operand.areg(6))
+        self.builder.add(OpCode.MOVE, Operand.areg(7), Operand.areg(6))
+
+        # Загружаем число из параметров [A6 + 8] в D0
+        self.builder.add(OpCode.MOVE, Operand.ind_areg_disp(6, 8), Operand.dreg(0))
+
+        # Обработка отрицательных чисел
+        self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+        self.builder.add(OpCode.JGE, "print_int_pos")
+
+        # Выводим '-' (ASCII 45)
+        self.builder.add(OpCode.MOVE, Operand.imm(45), Operand.dreg(1))
+        self.builder.add(OpCode.MOVE, Operand.dreg(1), Operand.abs(IO_OUTPUT_DATA))
+        self.builder.add(OpCode.NEG, Operand.dreg(0))
+
+        self.builder.label("print_int_pos")
+        # Если число == 0, выводим '0' (ASCII 48)
+        self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+        self.builder.add(OpCode.JNE, "print_int_nonzero")
+        self.builder.add(OpCode.MOVE, Operand.imm(48), Operand.dreg(1))
+        self.builder.add(OpCode.MOVE, Operand.dreg(1), Operand.abs(IO_OUTPUT_DATA))
+        self.builder.add(OpCode.JMP, "print_int_end")
+
+        self.builder.label("print_int_nonzero")
+        # Сеттим счетчик цифр D2 = 0
+        self.builder.add(OpCode.MOVE, Operand.imm(0), Operand.dreg(2))
+
+        self.builder.label("print_int_loop")
+        self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+        self.builder.add(OpCode.JE, "print_int_print_loop")
+
+        # Получаем последнюю цифру: D1 = D0 % 10
+        self.builder.add(OpCode.MOVE, Operand.dreg(0), Operand.dreg(1))
+        self.builder.add(OpCode.MOD, Operand.imm(10), Operand.dreg(1))
+        # Заталкиваем ее на стек
+        self.builder.add(OpCode.PUSH, Operand.dreg(1))
+        # D0 /= 10
+        self.builder.add(OpCode.DIV, Operand.imm(10), Operand.dreg(0))
+        # Увеличиваем счетчик цифр
+        self.builder.add(OpCode.ADD, Operand.imm(1), Operand.dreg(2))
+        self.builder.add(OpCode.JMP, "print_int_loop")
+
+        self.builder.label("print_int_print_loop")
+        self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(2))
+        self.builder.add(OpCode.JE, "print_int_end")
+
+        # Достаем цифру из стека
+        self.builder.add(OpCode.POP, Operand.dreg(1))
+        # Переводим в ASCII: D1 += 48
+        self.builder.add(OpCode.ADD, Operand.imm(48), Operand.dreg(1))
+        # Печатаем
+        self.builder.add(OpCode.MOVE, Operand.dreg(1), Operand.abs(IO_OUTPUT_DATA))
+        # Уменьшаем счетчик
+        self.builder.add(OpCode.SUB, Operand.imm(1), Operand.dreg(2))
+        self.builder.add(OpCode.JMP, "print_int_print_loop")
+
+        self.builder.label("print_int_end")
+        self.builder.add(OpCode.MOVE, Operand.areg(6), Operand.areg(7))
+        self.builder.add(OpCode.POP, Operand.areg(6))
+        self.builder.add(OpCode.RET)

@@ -37,7 +37,12 @@ class AssemblyBuilder:
         self._elements.append(name)
         return self
 
-    def build(self, entry_point: int = 0, data: tuple[int, ...] = ()) -> ProgramImage:
+    def build(
+        self,
+        entry_point: int = 0,
+        data: tuple[int, ...] = (),
+        interrupt_vectors: tuple[int | str, ...] = (),
+    ) -> ProgramImage:
         """Сборка программы: расчет смещений меток, подстановка адресов и генерация ProgramImage."""
         labels: dict[str, int] = {}
         current_offset = entry_point
@@ -49,10 +54,20 @@ class AssemblyBuilder:
                 labels[el] = current_offset
             else:
                 instructions.append(el)
-                # Длина инструкции не зависит от значения адреса-заглушки
                 current_offset += len(encode_instruction(el))
 
-        # Второй проход: разрешение ссылок на метки
+        # Разрешение адресов в векторах прерываний
+        resolved_vectors: list[int] = []
+        for vec in interrupt_vectors:
+            if isinstance(vec, str):
+                if vec not in labels:
+                    msg = f"Undefined interrupt handler label: {vec}"
+                    raise ValueError(msg)
+                resolved_vectors.append(labels[vec])
+            else:
+                resolved_vectors.append(vec)
+
+        # Второй проход: разрешение ссылок на метки в инструкциях
         for instr_idx, op_idx, label_name in self._refs:
             if label_name not in labels:
                 msg = f"Undefined label reference: {label_name}"
@@ -61,12 +76,12 @@ class AssemblyBuilder:
             target_pc = labels[label_name]
             instr = instructions[instr_idx]
 
-            # Создаем копию списка операндов и заменяем заглушку на реальный адрес метки
             new_operands = list(instr.operands)
             new_operands[op_idx] = Operand.abs(target_pc)
 
             instructions[instr_idx] = Instruction(instr.opcode, tuple(new_operands))
 
-        # Кодируем финальный список инструкций в бинарный код
         code = encode_program(instructions)
-        return ProgramImage(entry_point=entry_point, code=code, data=data)
+        return ProgramImage(
+            entry_point=entry_point, code=code, data=data, interrupt_vectors=tuple(resolved_vectors)
+        )
