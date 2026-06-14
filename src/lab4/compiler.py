@@ -27,6 +27,7 @@ from lab4.isa import OpCode, Operand
 if TYPE_CHECKING:
     from lab4.binary import ProgramImage
 
+
 class Compiler:
     """Компилятор из AST языка alg в бинарный образ ProgramImage."""
 
