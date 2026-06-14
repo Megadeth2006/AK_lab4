@@ -37,6 +37,13 @@ class Compiler:
         self.local_symbols: dict[str, int] = {}
         # Смещение для следующей локальной переменной
         self.next_local_offset = -4
+        # Счетчик для генерации уникальных имен меток
+        self.label_counter = 0
+
+    def _new_label(self, prefix: str) -> str:
+        """Генерация уникальной метки."""
+        self.label_counter += 1
+        return f"{prefix}_{self.label_counter}"
 
     def compile(self, program: Program) -> ProgramImage:
         """Компиляция всей программы."""
@@ -104,6 +111,56 @@ class Compiler:
                 # move D0, [A6 + offset]
                 self.builder.add(OpCode.MOVE, Operand.dreg(0), Operand.ind_areg_disp(6, offset))
 
+        elif isinstance(stmt, Return):
+            if stmt.value:
+                self._compile_expr(stmt.value)
+            self._compile_epilogue()
+
+        elif isinstance(stmt, If):
+            else_label = self._new_label("else")
+            endif_label = self._new_label("endif")
+
+            # Вычисляем условие (результат в D0)
+            self._compile_expr(stmt.cond)
+            # Сравниваем результат в D0 с нулем (False)
+            self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+
+            # Если условие ложно, прыгаем в ветку else (или endif, если else нет)
+            target_false = else_label if stmt.else_branch else endif_label
+            self.builder.add(OpCode.JE, target_false)
+
+            # Ветка then
+            self._compile_statement(stmt.then_branch)
+
+            if stmt.else_branch:
+                # Обходим ветку else
+                self.builder.add(OpCode.JMP, endif_label)
+                self.builder.label(else_label)
+                self._compile_statement(stmt.else_branch)
+
+            self.builder.label(endif_label)
+
+        elif isinstance(stmt, While):
+            start_label = self._new_label("while_start")
+            end_label = self._new_label("while_end")
+
+            self.builder.label(start_label)
+            # Вычисляем условие (результат в D0)
+            self._compile_expr(stmt.cond)
+            # Если 0 (False), выходим из цикла
+            self.builder.add(OpCode.CMP, Operand.imm(0), Operand.dreg(0))
+            self.builder.add(OpCode.JE, end_label)
+
+            # Тело цикла
+            self._compile_statement(stmt.body)
+
+            # Прыгаем обратно в начало проверки условий
+            self.builder.add(OpCode.JMP, start_label)
+            self.builder.label(end_label)
+
+        elif isinstance(stmt, ExprStmt):
+            self._compile_expr(stmt.expr)
+
         elif isinstance(stmt, Assign):
             if stmt.name not in self.local_symbols:
                 msg = f"Undefined variable: {stmt.name}"
@@ -169,6 +226,36 @@ class Compiler:
             elif expr.op == "%":
                 self.builder.add(OpCode.MOD, Operand.dreg(0), Operand.dreg(1))
                 self.builder.add(OpCode.MOVE, Operand.dreg(1), Operand.dreg(0))
+            elif expr.op in ("==", "!=", "<", "<=", ">", ">="):
+                # Сравниваем левый операнд (D1) и правый (D0). CMP D0, D1 делает D1 - D0
+                self.builder.add(OpCode.CMP, Operand.dreg(0), Operand.dreg(1))
+
+                true_label = self._new_label("cmp_true")
+                end_label = self._new_label("cmp_end")
+
+                # Делаем условный переход на true_label в зависимости от оператора
+                if expr.op == "==":
+                    self.builder.add(OpCode.JE, true_label)
+                elif expr.op == "!=":
+                    self.builder.add(OpCode.JNE, true_label)
+                elif expr.op == "<":
+                    self.builder.add(OpCode.JL, true_label)
+                elif expr.op == "<=":
+                    self.builder.add(OpCode.JLE, true_label)
+                elif expr.op == ">":
+                    self.builder.add(OpCode.JG, true_label)
+                elif expr.op == ">=":
+                    self.builder.add(OpCode.JGE, true_label)
+
+                # Путь ложного условия (False -> 0)
+                self.builder.add(OpCode.MOVE, Operand.imm(0), Operand.dreg(0))
+                self.builder.add(OpCode.JMP, end_label)
+
+                # Путь истинного условия (True -> 1)
+                self.builder.label(true_label)
+                self.builder.add(OpCode.MOVE, Operand.imm(1), Operand.dreg(0))
+
+                self.builder.label(end_label)
             else:
                 msg = f"Unsupported binary operator in expressions: {expr.op}"
                 raise NotImplementedError(msg)
