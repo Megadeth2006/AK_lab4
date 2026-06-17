@@ -298,6 +298,43 @@ class Compiler:
                 raise NotImplementedError(msg)
 
         elif isinstance(expr, Call):
+            # Обработка встроенных функций (Built-ins)
+            if expr.name == "enable_interrupts":
+                self.builder.add(OpCode.EI)
+                return
+            if expr.name == "disable_interrupts":
+                self.builder.add(OpCode.DI)
+                return
+            if expr.name == "read_io":
+                # Вычисляем адрес -> D0
+                self._compile_expr(expr.args[0])
+                # Переносим в адресный регистр A0 и считываем из него [A0] -> D0
+                self.builder.add(OpCode.MOVE, Operand.dreg(0), Operand.areg(0))
+                self.builder.add(OpCode.MOVE, Operand.ind_areg(0), Operand.dreg(0))
+                return
+            if expr.name == "write_io":
+                # Вычисляем адрес -> D0, сохраняем на стек
+                self._compile_expr(expr.args[0])
+                self.builder.add(OpCode.PUSH, Operand.dreg(0))
+                # Вычисляем значение -> D0
+                self._compile_expr(expr.args[1])
+                # Достаем адрес в A0
+                self.builder.add(OpCode.POP, Operand.areg(0))
+                # Записываем значение: move D0, [A0]
+                self.builder.add(OpCode.MOVE, Operand.dreg(0), Operand.ind_areg(0))
+                return
+            if expr.name == "allocate_buffer":
+                # allocate_buffer(size) резервирует место в секции данных
+                size_node = expr.args[0]
+                if not isinstance(size_node, NumLiteral):
+                    msg = "allocate_buffer size must be a number literal"
+                    raise ValueError(msg)
+                addr = len(self.static_data) * WORD_BYTES
+                for _ in range(size_node.value):
+                    self.static_data.append(0)
+                self.builder.add(OpCode.MOVE, Operand.imm(addr), Operand.dreg(0))
+                return
+
             # Передаем параметры функции на стеке в обратном порядке (M68k / CDECL)
             for arg in reversed(expr.args):
                 self._compile_expr(arg)
