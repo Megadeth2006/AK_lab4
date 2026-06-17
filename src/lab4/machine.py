@@ -87,9 +87,9 @@ class Machine:
         if addr_u32 == IO_INPUT_STATUS:
             return self.input_status
         if addr_u32 == IO_INPUT_DATA:
-            val = self.input_data
+            input_val: int = self.input_data
             self.input_status = 0  # Чтение данных сбрасывает готовность порта
-            return val
+            return input_val
         if addr_u32 == IO_OUTPUT_STATUS:
             return 1
         if addr_u32 == IO_OUTPUT_DATA:
@@ -102,8 +102,8 @@ class Machine:
         if address % WORD_BYTES != 0:
             msg = f"Data memory address must be word-aligned: {address}"
             raise ValueError(msg)
-        val: int = struct.unpack_from("<i", self.data_memory, address)[0]
-        return to_i32(val)
+        memory_val: int = struct.unpack_from("<i", self.data_memory, address)[0]
+        return to_i32(memory_val)
 
     def write_word(self, address: int, value: int) -> None:
         """Запись 32-битного знакового слова в память данных по байтовому адресу."""
