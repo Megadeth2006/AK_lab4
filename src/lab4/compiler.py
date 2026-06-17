@@ -213,8 +213,6 @@ class Compiler:
             offset = self.local_symbols[expr.name]
             # move [A6 + offset], D0
             self.builder.add(OpCode.MOVE, Operand.ind_areg_disp(6, offset), Operand.dreg(0))
-        elif isinstance(expr, NumLiteral):
-            self.builder.add(OpCode.MOVE, Operand.imm(expr.value), Operand.dreg(0))
 
         elif isinstance(expr, StrLiteral):
             if expr.value not in self.string_literals:
