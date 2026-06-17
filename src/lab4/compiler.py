@@ -42,6 +42,8 @@ class Compiler:
         self.static_data: list[int] = []
         # Кэш дубликатов строк: литерал -> байтовый адрес
         self.string_literals: dict[str, int] = {}
+        # Храним имя текущей компилируемой функции
+        self.current_func_name = ""
 
     def _new_label(self, prefix: str) -> str:
         """Генерация уникальной метки."""
@@ -81,6 +83,7 @@ class Compiler:
 
     def _compile_function(self, func: Function) -> None:
         """Компиляция одной функции (пролог, тело, эпилог)."""
+        self.current_func_name = func.name
         self.builder.label(func.name)
 
         # Сбрасываем таблицу локальных символов для новой функции
@@ -357,8 +360,11 @@ class Compiler:
         self.builder.add(OpCode.MOVE, Operand.areg(6), Operand.areg(7))
         # Восстанавливаем старый Frame Pointer: pop A6
         self.builder.add(OpCode.POP, Operand.areg(6))
-        # Возврат
-        self.builder.add(OpCode.RET)
+        # Если это обработчик прерывания ввода, делаем возврат через IRET
+        if self.current_func_name == "on_input":
+            self.builder.add(OpCode.IRET)
+        else:
+            self.builder.add(OpCode.RET)
 
     def _count_local_variables(self, block: Block) -> int:
         """Вспомогательный метод для подсчета количества локальных переменных в блоке."""

@@ -94,7 +94,7 @@ def main() -> None:
 
             if args.output:
                 # Записываем результат и логи в файл
-                result_text = f"OUTPUT \n{output_text}\n\nLOG\n{log_text}"
+                result_text = f"=== OUTPUT ===\n{output_text}\n\n=== LOG ===\n{log_text}"
                 args.output.write_text(result_text, encoding="utf-8")
                 sys.stdout.write(
                     f"""Simulation completed. Ticks: {machine.tick_counter}.
@@ -102,9 +102,9 @@ def main() -> None:
                 )
             else:
                 # Печатаем вывод прямо в консоль
-                sys.stdout.write("SIMULATION OUTPUT\n")
+                sys.stdout.write("=== SIMULATION OUTPUT ===\n")
                 sys.stdout.write(output_text + "\n")
-                sys.stdout.write("----\n")
+                sys.stdout.write("=========================\n")
                 sys.stdout.write(f"Total ticks: {machine.tick_counter}\n")
 
         case _:

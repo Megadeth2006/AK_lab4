@@ -80,35 +80,48 @@ class Machine:
 
     def read_word(self, address: int) -> int:
         """Чтение 32-битного знакового слова из памяти данных по байтовому адресу."""
-        # Обработка портов ввода-вывода (Memory-mapped I/O)
-        if address == IO_INPUT_STATUS:
-            return self.input_status
-        if address == IO_INPUT_DATA:
-            input_val: int = self.input_data
-            self.input_status = 0  # Чтение данных сбрасывает готовность порта
-            return input_val
+        # Приводим адрес к беззнаковому 32-битному виду для корректного сравнения с MMIO портами
+        addr_u32 = address & 0xFFFFFFFF
 
-        # Обработка портов вывода (Memory-mapped I/O)
-        if address == IO_OUTPUT_STATUS:
-            return 1  # Порт вывода всегда готов к приему данных
-        if address == IO_OUTPUT_DATA:
-            return 0  # Порт данных только для записи, при чтении возвращает 0
+        # Обработка портов ввода-вывода (Memory-mapped I/O)
+        if addr_u32 == IO_INPUT_STATUS:
+            return self.input_status
+        if addr_u32 == IO_INPUT_DATA:
+            val = self.input_data
+            self.input_status = 0  # Чтение данных сбрасывает готовность порта
+            return val
+        if addr_u32 == IO_OUTPUT_STATUS:
+            return 1
+        if addr_u32 == IO_OUTPUT_DATA:
+            return 0
+
+        # Для обычной памяти выполняем стандартные знаковые проверки границ
         if address < 0 or address + WORD_BYTES > self.data_memory_size:
             msg = f"Data memory access out of bounds: {address}"
             raise ValueError(msg)
         if address % WORD_BYTES != 0:
             msg = f"Data memory address must be word-aligned: {address}"
             raise ValueError(msg)
-        memory_val: int = struct.unpack_from("<i", self.data_memory, address)[0]
-        return to_i32(memory_val)
+        val: int = struct.unpack_from("<i", self.data_memory, address)[0]
+        return to_i32(val)
 
     def write_word(self, address: int, value: int) -> None:
         """Запись 32-битного знакового слова в память данных по байтовому адресу."""
-        if address == IO_OUTPUT_DATA:
+        # Приводим адрес к беззнаковому 32-битному виду для сравнения с MMIO
+        addr_u32 = address & 0xFFFFFFFF
+
+        # Обработка портов вывода (Memory-mapped I/O)
+        if addr_u32 == IO_OUTPUT_DATA:
             self.output_buffer.append(value & 0xFF)  # Сохраняем младший байт как ASCII-символ
             return
-        if address == IO_OUTPUT_STATUS:
+        if addr_u32 == IO_OUTPUT_STATUS:
             return  # Запись в порт статуса вывода игнорируется
+
+        # Запись в порты ввода игнорируется
+        if addr_u32 in (IO_INPUT_DATA, IO_INPUT_STATUS):
+            return
+
+        # Для обычной памяти выполняем стандартные проверки границ
         if address < 0 or address + WORD_BYTES > self.data_memory_size:
             msg = f"Data memory access out of bounds: {address}"
             raise ValueError(msg)
