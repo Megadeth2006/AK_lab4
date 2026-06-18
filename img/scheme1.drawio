@@ -1,0 +1,178 @@
+<mxfile host="Electron" modified="2026-06-18T00:00:00.000Z" agent="5.0" version="21.1.2" type="device">
+  <diagram id="datapath_scalar" name="DataPath Scalar">
+    <mxGraphModel dx="1420" dy="870" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        
+        <!-- CONTROL UNIT -->
+        <mxCell id="cu" value="&lt;b&gt;Control Unit&lt;/b&gt;&lt;br&gt;(Hardwired)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="60" y="320" width="160" height="120" as="geometry" />
+        </mxCell>
+        
+        <!-- INSTRUCTION MEMORY -->
+        <mxCell id="im" value="&lt;b&gt;Instruction Memory&lt;/b&gt;&lt;br&gt;(ROM 4KB / Bytes)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="280" y="440" width="140" height="80" as="geometry" />
+        </mxCell>
+        
+        <!-- PC REGISTER -->
+        <mxCell id="pc" value="&lt;b&gt;PC&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=center;" vertex="1" parent="1">
+          <mxGeometry x="310" y="320" width="80" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- PC ADDER -->
+        <mxCell id="pc_add" value="&lt;b&gt;ADD&lt;/b&gt;&lt;br&gt;+4" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="110" y="180" width="100" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- PC MUX -->
+        <mxCell id="pc_mux" value="&lt;b&gt;MUX&lt;/b&gt;" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="250" y="180" width="120" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- SCALAR REGISTER FILE -->
+        <mxCell id="rf" value="&lt;b&gt;Scalar Register File&lt;/b&gt;&lt;br&gt;(D0-D7, A0-A7, SR)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="460" y="560" width="180" height="110" as="geometry" />
+        </mxCell>
+        
+        <!-- SCALAR ALU -->
+        <mxCell id="alu" value="&lt;b&gt;Scalar ALU&lt;/b&gt;" style="shape=polygon;whiteSpace=wrap;html=1;bounds=[[0,0.2],[0.25,0],[0.75,0],[1,0.2],[1,0.8],[0.5,1],[0,0.8]];fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="220" y="740" width="140" height="70" as="geometry" />
+        </mxCell>
+        
+        <!-- ALU LEFT MUX -->
+        <mxCell id="alu_l_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="160" y="670" width="80" height="35" as="geometry" />
+        </mxCell>
+        
+        <!-- ALU RIGHT MUX -->
+        <mxCell id="alu_r_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="290" y="670" width="80" height="35" as="geometry" />
+        </mxCell>
+        
+        <!-- DATA MEMORY BLOCK -->
+        <mxCell id="mem_block" value="&lt;b&gt;Memory Block&lt;/b&gt;&lt;br&gt;(RAM 16KB &amp;amp; MMIO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1">
+          <mxGeometry x="460" y="280" width="180" height="150" as="geometry" />
+        </mxCell>
+        
+        <!-- ADDRESS REGISTER (AR) -->
+        <mxCell id="ar" value="&lt;b&gt;AR&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="510" y="210" width="80" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- ADDRESS MUX -->
+        <mxCell id="addr_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="500" y="140" width="100" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- ADDRESS ADDER -->
+        <mxCell id="addr_adder" value="&lt;b&gt;Address Adder&lt;/b&gt;&lt;br&gt;(Base + Payload)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="710" y="200" width="120" height="50" as="geometry" />
+        </mxCell>
+        
+        <!-- BASE ADDR MUX -->
+        <mxCell id="base_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="720" y="120" width="100" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- SP - 4 ADDER -->
+        <mxCell id="sp_sub_add" value="&lt;b&gt;ADD&lt;/b&gt;&lt;br&gt;-4" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="460" y="710" width="80" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- SP + 4 ADDER -->
+        <mxCell id="sp_add_add" value="&lt;b&gt;ADD&lt;/b&gt;&lt;br&gt;+4" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="560" y="710" width="80" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- REG DATA SEL MUX -->
+        <mxCell id="reg_data_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="490" y="490" width="120" height="40" as="geometry" />
+        </mxCell>
+        
+        <!-- DATA IN MUX -->
+        <mxCell id="data_in_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="390" y="240" width="90" height="35" as="geometry" />
+        </mxCell>
+        
+        <!-- MEM SEL MUX -->
+        <mxCell id="mem_sel_mux" value="MUX" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;rotation=-180;" vertex="1" parent="1">
+          <mxGeometry x="510" y="450" width="80" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ================= CONNECTION EDGES ================= -->
+        
+        <!-- PC to Instruction Memory Address -->
+        <mxCell id="edge1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="pc" target="im">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Instruction Memory to Control Unit -->
+        <mxCell id="edge2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0;exitY=0.5;entryX=1;entryY=0.75;" edge="1" parent="1" source="im" target="cu">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="250,480;250,410" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Control Unit to PC Write -->
+        <mxCell id="edge3" value="&lt;font color=&quot;#666666&quot;&gt;--PC_wr--&amp;gt;&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=1;exitY=0.25;entryX=0;entryY=0.5;dashed=1;dashPattern=1 3;" edge="1" parent="1" source="cu" target="pc">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="260,350;260,340" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Scalar Register File Outputs to ALU MUXes -->
+        <mxCell id="edge4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.25;exitY=1;entryX=0.5;entryY=0;rotation=-180;" edge="1" parent="1" source="rf" target="alu_l_mux">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="505,690;200,690" />
+          </mxGeometry>
+        </mxCell>
+        
+        <mxCell id="edge5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;rotation=-180;" edge="1" parent="1" source="rf" target="alu_r_mux">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="550,700;330,700" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ALU output to RegData MUX -->
+        <mxCell id="edge6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;rotation=-180;" edge="1" parent="1" source="alu" target="reg_data_mux">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="290,830;430,830;430,510" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- AR to Memory Address -->
+        <mxCell id="edge7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="ar" target="mem_block">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        
+        <!-- Address Adder to Address MUX -->
+        <mxCell id="edge8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=1;entryY=0.5;rotation=-180;" edge="1" parent="1" source="addr_adder" target="addr_mux">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="770,270;860,270;860,110;630,110;630,160" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- SP_Out to SP Adders -->
+        <mxCell id="edge9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;rotation=-180;" edge="1" parent="1" source="rf" target="sp_sub_add">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="595,680;500,680" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="edge10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.75;exitY=1;entryX=0.5;entryY=0;rotation=-180;" edge="1" parent="1" source="rf" target="sp_add_add">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="595,680;600,680" />
+          </mxGeometry>
+        </mxCell>
+        
+        <!-- Control Unit to ALU_Op -->
+        <mxCell id="edge11" value="&lt;font color=&quot;#666666&quot;&gt;ALU_op&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;exitX=0.5;exitY=1;entryX=0;entryY=0.5;dashed=1;dashPattern=1 3;" edge="1" parent="1" source="cu" target="alu">
+          <mxGeometry relative="1" as="geometry">
+            <Array points="140,775" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
