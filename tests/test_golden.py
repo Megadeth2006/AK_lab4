@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+
 import pytest
 
 from lab4.binary import ProgramImage
 from lab4.compiler import Compiler
-from lab4.disasm import disassemble_image, disassemble_code
+from lab4.disasm import disassemble_code, disassemble_image
 from lab4.lexer import Lexer
 from lab4.machine import Machine
 from lab4.parser import Parser
@@ -21,7 +22,7 @@ def load_input_schedule(text: str) -> list[tuple[int, str]]:
     """Преобразование строки ввода в асинхронное расписание прерываний (по символу каждые 150 тактов, начиная с 500)."""
     schedule: list[tuple[int, str]] = []
     for i, char in enumerate(text):
-        # Начинаем с 500-го такта, чтобы программа успела завершить вывод 
+        # Начинаем с 500-го такта, чтобы программа успела завершить вывод
         # приветствия и аппаратно разрешить прерывания (вызвать EI)
         schedule.append((500 + i * 150, char))
     return schedule
@@ -30,7 +31,14 @@ def load_input_schedule(text: str) -> list[tuple[int, str]]:
 def save_as_golden_yaml(path: Path, data: dict[str, str]) -> None:
     """Запись структуры в файл YAML с сохранением блочного форматирования '|' для многострочных полей."""
     content = []
-    for key in ["source_code", "disassembly", "input", "schedule", "expected_stdout", "log_journal"]:
+    for key in [
+        "source_code",
+        "disassembly",
+        "input",
+        "schedule",
+        "expected_stdout",
+        "log_journal",
+    ]:
         val = data[key]
         # Если в значении есть переносы строк, форматируем как блок '|'
         if "\n" in val or key in ("source_code", "disassembly", "expected_stdout", "log_journal"):
@@ -50,7 +58,16 @@ def parse_golden_yaml(path: Path) -> dict[str, str]:
     current_block: list[str] = []
 
     for line in lines:
-        if line.startswith(("source_code:", "disassembly:", "input:", "schedule:", "expected_stdout:", "log_journal:")):
+        if line.startswith(
+            (
+                "source_code:",
+                "disassembly:",
+                "input:",
+                "schedule:",
+                "expected_stdout:",
+                "log_journal:",
+            )
+        ):
             if current_key:
                 data[current_key] = "\n".join(current_block)
             parts = line.split(":", 1)
@@ -61,11 +78,10 @@ def parse_golden_yaml(path: Path) -> dict[str, str]:
             else:
                 # Однострочное значение в кавычках
                 current_block = [val_part.strip('"')]
-        else:
-            if line.startswith("  "):
-                current_block.append(line[2:])
-            elif line.strip() == "":
-                current_block.append("")
+        elif line.startswith("  "):
+            current_block.append(line[2:])
+        elif line.strip() == "":
+            current_block.append("")
 
     if current_key:
         data[current_key] = "\n".join(current_block)
@@ -84,7 +100,9 @@ def generate_harvard_memory_dump(machine: Machine, image: ProgramImage) -> str:
     for line in dis_code.splitlines():
         dump_lines.append(f"   {line}")
 
-    dump_lines.append("--------------------------------------------------------------------------------")
+    dump_lines.append(
+        "--------------------------------------------------------------------------------"
+    )
     dump_lines.append("DATA MEMORY (Used Non-Zero Words & Active Stack):")
 
     # Считываем используемые ячейки памяти данных
