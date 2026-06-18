@@ -383,10 +383,15 @@ python -m lab4.cli run <binary_file.bin> [input_file.txt] [output_log.txt]
 
 ### 4. Схемы процессора и их описание
 
-Схемы DataPath и ControlUnit, отражающие аппаратную структуру процессора
+Схема datapath
 
 ![datapath](img/datapath.png)
 
+Схема register file
+![register_file](img/register_file.png)
+
+Схема control unit
+![control unit](img/control_unit.png)
 ---
 
 ## Тестирование
